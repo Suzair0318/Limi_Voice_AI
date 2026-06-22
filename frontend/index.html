@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Limi Voice AI - Test Console</title>
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --panel: #141a2b;
+      --panel-2: #1b2236;
+      --accent: #6c8cff;
+      --accent-2: #38e1b0;
+      --danger: #ff5d6c;
+      --text: #e6e9f2;
+      --muted: #8b93ab;
+      --border: #28304a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #1a2240 0%, var(--bg) 60%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: 0.3px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    }
+    .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--muted); transition: background 0.3s;
+    }
+    .status-dot.connected { background: var(--accent-2); box-shadow: 0 0 10px var(--accent-2); }
+    .status-dot.error { background: var(--danger); }
+    .status-text { font-size: 13px; color: var(--muted); }
+
+    .mic-wrap { display: flex; flex-direction: column; align-items: center; margin: 28px 0 16px; }
+    .mic-btn {
+      width: 120px; height: 120px; border-radius: 50%;
+      border: none; cursor: pointer;
+      background: linear-gradient(145deg, var(--accent), #4b6bff);
+      color: white; font-size: 15px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.12s, box-shadow 0.2s;
+      box-shadow: 0 10px 30px rgba(108,140,255,0.4);
+    }
+    .mic-btn:hover { transform: translateY(-2px); }
+    .mic-btn:active { transform: scale(0.97); }
+    .mic-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .mic-btn.recording {
+      background: linear-gradient(145deg, var(--danger), #e23b4c);
+      box-shadow: 0 0 0 0 rgba(255,93,108,0.6);
+      animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(255,93,108,0.55); }
+      70% { box-shadow: 0 0 0 22px rgba(255,93,108,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,93,108,0); }
+    }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 14px; text-align: center; }
+
+    .meter {
+      width: 100%; height: 8px; border-radius: 6px; background: var(--panel-2);
+      overflow: hidden; margin-top: 18px; border: 1px solid var(--border);
+    }
+    .meter > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); transition: width 0.08s; }
+
+    .controls { margin-top: 22px; }
+    label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    input[type=text] {
+      width: 100%; padding: 9px 12px; border-radius: 9px;
+      background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      font-size: 13px;
+    }
+    .btn {
+      padding: 9px 16px; border-radius: 9px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text); cursor: pointer; font-size: 13px;
+    }
+    .btn:hover { border-color: var(--accent); }
+
+    .log {
+      margin-top: 22px; background: #0a0e18; border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px; height: 200px; overflow-y: auto;
+      font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px; line-height: 1.6;
+    }
+    .log .l { color: var(--muted); }
+    .log .l.info { color: #9fb4ff; }
+    .log .l.ok { color: var(--accent-2); }
+    .log .l.warn { color: #ffcf6b; }
+    .log .l.err { color: var(--danger); }
+    .transcript {
+      margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      font-size: 14px; min-height: 20px; color: var(--text);
+    }
+    .transcript span { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Limi Voice AI &mdash; Test Console</h1>
+  <div class="subtitle">Click the mic, speak, click again to send. The AI replies in audio.</div>
+
+  <div class="card">
+    <div class="row">
+      <span id="dot" class="status-dot"></span>
+      <span id="statusText" class="status-text">Disconnected</span>
+      <span style="flex:1"></span>
+      <button id="reconnectBtn" class="btn">Reconnect</button>
+    </div>
+
+    <div class="mic-wrap">
+      <button id="micBtn" class="mic-btn" disabled>Connecting&hellip;</button>
+      <div class="meter"><div id="meterFill"></div></div>
+      <div class="hint" id="hint">Waiting for connection&hellip;</div>
+    </div>
+
+    <div class="transcript" id="transcript"><span>AI transcript will appear here&hellip;</span></div>
+
+    <div class="controls">
+      <label for="wsUrl">WebSocket URL</label>
+      <input type="text" id="wsUrl" />
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    // --- Must match the server's app/config.py defaults ---
+    const INPUT_SAMPLE_RATE = 16000;   // server expects 16kHz mono
+    const OUTPUT_SAMPLE_RATE = 48000;  // server streams 48kHz stereo
+    const OUTPUT_CHANNELS = 2;
+
+    const els = {
+      dot: document.getElementById("dot"),
+      statusText: document.getElementById("statusText"),
+      micBtn: document.getElementById("micBtn"),
+      meterFill: document.getElementById("meterFill"),
+      hint: document.getElementById("hint"),
+      log: document.getElementById("log"),
+      wsUrl: document.getElementById("wsUrl"),
+      reconnectBtn: document.getElementById("reconnectBtn"),
+      transcript: document.getElementById("transcript"),
+    };
+
+    // Default WS URL derived from where the page is served.
+    const defaultUrl =
+      (location.protocol === "https:" ? "wss://" : "ws://") +
+      location.host + "/ws/web-client";
+    els.wsUrl.value = defaultUrl;
+
+    let ws = null;
+    let audioCtx = null;       // capture context (16kHz)
+    let mediaStream = null;
+    let sourceNode = null;
+    let processorNode = null;
+    let isRecording = false;
+
+    // Playback queue for the streamed response.
+    let playbackCtx = null;
+    let incomingChunks = [];
+    let receiving = false;
+
+    function log(msg, kind = "") {
+      const div = document.createElement("div");
+      div.className = "l " + kind;
+      const t = new Date().toLocaleTimeString();
+      div.textContent = `[${t}] ${msg}`;
+      els.log.appendChild(div);
+      els.log.scrollTop = els.log.scrollHeight;
+    }
+
+    function setStatus(text, state) {
+      els.statusText.textContent = text;
+      els.dot.className = "status-dot" + (state ? " " + state : "");
+    }
+
+    // ---------------------------------------------------------------
+    // WebSocket
+    // ---------------------------------------------------------------
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        ws.close();
+      }
+      const url = els.wsUrl.value.trim();
+      log("Connecting to " + url, "info");
+      setStatus("Connecting…", "");
+      ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        setStatus("Connected", "connected");
+        els.micBtn.disabled = false;
+        els.micBtn.textContent = "Hold to Talk";
+        els.hint.textContent = "Click to start talking";
+        log("WebSocket connected.", "ok");
+      };
+      ws.onclose = () => {
+        setStatus("Disconnected", "");
+        els.micBtn.disabled = true;
+        els.micBtn.textContent = "Offline";
+        log("WebSocket closed.", "warn");
+      };
+      ws.onerror = (e) => {
+        setStatus("Connection error", "error");
+        log("WebSocket error (is the server running?).", "err");
+      };
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          handleControl(event.data);
+        } else {
+          // Binary audio chunk from the AI response.
+          if (receiving) incomingChunks.push(event.data);
+        }
+      };
+    }
+
+    function handleControl(text) {
+      let msg;
+      try { msg = JSON.parse(text); } catch { log("Control: " + text); return; }
+      if (msg.type === "response_start") {
+        log("AI response starting — receiving audio…", "info");
+        incomingChunks = [];
+        receiving = true;
+        if (msg.transcript) showTranscript(msg.transcript);
+      } else if (msg.type === "response_end") {
+        receiving = false;
+        log("AI response complete. Playing back…", "ok");
+        playResponse();
+      } else if (msg.type === "error") {
+        receiving = false;
+        log("Server error: " + (msg.detail || "unknown"), "err");
+      } else {
+        log("Control: " + text);
+      }
+    }
+
+    function showTranscript(t) {
+      els.transcript.textContent = t;
+    }
+
+    // ---------------------------------------------------------------
+    // Microphone capture -> stream 16kHz mono Int16 PCM
+    // ---------------------------------------------------------------
+    async function startRecording() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("Not connected.", "err");
+        return;
+      }
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        });
+      } catch (e) {
+        log("Microphone access denied: " + e.message, "err");
+        return;
+      }
+
+      // Request a 16kHz context so the browser resamples the mic for us.
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: INPUT_SAMPLE_RATE });
+      } catch {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const actualRate = audioCtx.sampleRate;
+
+      sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+      const bufferSize = 2048;
+      processorNode = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+
+      processorNode.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        const input = e.inputBuffer.getChannelData(0);
+        // If the context isn't exactly 16kHz, downsample to 16kHz.
+        const samples = (actualRate === INPUT_SAMPLE_RATE)
+          ? input
+          : downsample(input, actualRate, INPUT_SAMPLE_RATE);
+
+        // Update VU meter.
+        let peak = 0;
+        for (let i = 0; i < samples.length; i++) peak = Math.max(peak, Math.abs(samples[i]));
+        els.meterFill.style.width = Math.min(100, peak * 140) + "%";
+
+        const pcm = floatToInt16(samples);
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(pcm.buffer);
+      };
+
+      sourceNode.connect(processorNode);
+      processorNode.connect(audioCtx.destination); // required to keep the node alive
+      isRecording = true;
+      els.micBtn.classList.add("recording");
+      els.micBtn.textContent = "Stop & Send";
+      els.hint.textContent = "Listening… click again when you finish speaking";
+      log("Recording started (" + actualRate + "Hz capture → 16kHz).", "info");
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      els.micBtn.classList.remove("recording");
+      els.micBtn.textContent = "Hold to Talk";
+      els.hint.textContent = "Sent! Waiting for AI reply…";
+      els.meterFill.style.width = "0%";
+
+      try { if (processorNode) processorNode.disconnect(); } catch {}
+      try { if (sourceNode) sourceNode.disconnect(); } catch {}
+      try { if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop()); } catch {}
+      try { if (audioCtx) audioCtx.close(); } catch {}
+
+      // Tell the server this turn is complete so the agent runs now.
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send("end_turn");
+        log("Turn finished — sent 'end_turn'.", "info");
+      }
+    }
+
+    function downsample(buffer, inRate, outRate) {
+      if (outRate >= inRate) return buffer;
+      const ratio = inRate / outRate;
+      const newLen = Math.round(buffer.length / ratio);
+      const result = new Float32Array(newLen);
+      let offsetResult = 0, offsetBuffer = 0;
+      while (offsetResult < newLen) {
+        const nextOffset = Math.round((offsetResult + 1) * ratio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffset && i < buffer.length; i++) { accum += buffer[i]; count++; }
+        result[offsetResult] = count ? accum / count : 0;
+        offsetResult++;
+        offsetBuffer = nextOffset;
+      }
+      return result;
+    }
+
+    function floatToInt16(floats) {
+      const out = new Int16Array(floats.length);
+      for (let i = 0; i < floats.length; i++) {
+        let s = Math.max(-1, Math.min(1, floats[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
+      return out;
+    }
+
+    // ---------------------------------------------------------------
+    // Playback of the streamed 48kHz stereo Int16 PCM response
+    // ---------------------------------------------------------------
+    function playResponse() {
+      if (!incomingChunks.length) { log("No audio received.", "warn"); return; }
+
+      let total = 0;
+      for (const c of incomingChunks) total += c.byteLength;
+      const merged = new Uint8Array(total);
+      let off = 0;
+      for (const c of incomingChunks) { merged.set(new Uint8Array(c), off); off += c.byteLength; }
+      incomingChunks = [];
+
+      const int16 = new Int16Array(merged.buffer);
+      const frameCount = Math.floor(int16.length / OUTPUT_CHANNELS);
+
+      if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = playbackCtx.createBuffer(OUTPUT_CHANNELS, frameCount, OUTPUT_SAMPLE_RATE);
+      for (let ch = 0; ch < OUTPUT_CHANNELS; ch++) {
+        const channelData = audioBuffer.getChannelData(ch);
+        for (let i = 0; i < frameCount; i++) {
+          channelData[i] = int16[i * OUTPUT_CHANNELS + ch] / 32768;
+        }
+      }
+      const src = playbackCtx.createBufferSource();
+      src.buffer = audioBuffer;
+      src.connect(playbackCtx.destination);
+      src.onended = () => { els.hint.textContent = "Click to talk again"; };
+      src.start();
+      log(`Playing ${(frameCount / OUTPUT_SAMPLE_RATE).toFixed(2)}s of audio.`, "ok");
+    }
+
+    // ---------------------------------------------------------------
+    // Wiring
+    // ---------------------------------------------------------------
+    els.micBtn.addEventListener("click", () => {
+      if (isRecording) stopRecording();
+      else startRecording();
+    });
+    els.reconnectBtn.addEventListener("click", connect);
+
+    connect();
+  </script>
+</body>
+</html>
