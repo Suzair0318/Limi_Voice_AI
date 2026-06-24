@@ -8,6 +8,9 @@ python-dotenv==1.0.1
 pydantic==2.10.4
 pydantic-settings==2.7.1
 
+# --- MongoDB (async) ---
+motor==3.7.1
+
 # --- Audio processing ---
 # NumPy powers the in-process PCM resampling between the device (16k/48k) and
 # the OpenAI Realtime API (24k).

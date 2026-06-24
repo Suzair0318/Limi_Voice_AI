@@ -1,11 +1,3 @@
-"""Application configuration.
-
-Settings are loaded from environment variables (or ``.env``) via pydantic-settings.
-Audio defaults match the stable ``server/`` hardware pipeline.
-"""
-
-from __future__ import annotations
-
 from functools import lru_cache
 from pathlib import Path
 
@@ -15,20 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=Path(__file__).resolve().parent.parent / ".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,
         extra="ignore",
     )
 
-    # --- MongoDB --------------------------------------------------------
-    mongo_url: str = Field(
-        "mongodb://127.0.0.1:27017/limi_project_dev",
-        alias="MONGO_URL",
-    )
-
-    # --- OpenAI / Realtime ----------------------------------------------
-    openai_api_key: str = Field(..., alias="OPENAI_API_KEY")
+    openai_api_key: str = Field(alias="OPENAI_API_KEY")
     openai_realtime_model: str = Field("gpt-realtime", alias="OPENAI_REALTIME_MODEL")
     openai_voice: str = Field("alloy", alias="OPENAI_VOICE")
     realtime_input_rate: int = Field(24000, alias="REALTIME_INPUT_RATE")
@@ -40,21 +24,14 @@ class Settings(BaseSettings):
         alias="REALTIME_INSTRUCTIONS",
     )
 
-    # --- Device audio (stable hardware pipeline) ------------------------
     device_input_rate: int = Field(16000, alias="DEVICE_INPUT_RATE")
     device_input_channels: int = Field(1, alias="DEVICE_INPUT_CHANNELS")
     device_output_rate: int = Field(24000, alias="DEVICE_OUTPUT_RATE")
     device_output_channels: int = Field(1, alias="DEVICE_OUTPUT_CHANNELS")
     device_output_chunk_ms: int = Field(80, alias="DEVICE_OUTPUT_CHUNK_MS")
-    device_output_initial_burst_chunks: int = Field(
-        16,
-        alias="DEVICE_OUTPUT_INITIAL_BURST_CHUNKS",
-    )
+    device_output_initial_burst_chunks: int = Field(16, alias="DEVICE_OUTPUT_INITIAL_BURST_CHUNKS")
     device_send_queue_chunks: int = Field(2048, alias="DEVICE_SEND_QUEUE_CHUNKS")
-    device_buffer_response_audio: bool = Field(
-        True,
-        alias="DEVICE_BUFFER_RESPONSE_AUDIO",
-    )
+    device_buffer_response_audio: bool = Field(True, alias="DEVICE_BUFFER_RESPONSE_AUDIO")
     save_backend_mic: bool = Field(True, alias="SAVE_BACKEND_MIC")
     backend_mic_recordings_dir: Path = Field(
         Path("backend_mic_recordings"),
@@ -72,9 +49,9 @@ class Settings(BaseSettings):
         )
 
 
-@lru_cache(maxsize=1)
+@lru_cache
 def get_settings() -> Settings:
     return Settings()  # type: ignore[call-arg]
 
 
-settings: Settings = get_settings()
+settings = get_settings()

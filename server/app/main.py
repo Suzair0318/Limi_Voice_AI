@@ -1,81 +1,39 @@
-"""FastAPI application: voice pendant backend.
-
-Stable hardware pipeline (merged from ``server/``):
-
-    device mic (16 kHz mono)  ->  resample to 24 kHz  ->  OpenAI Realtime (server VAD)
-    OpenAI audio (24 kHz)     ->  resample to 24 kHz  ->  device speaker (80 ms chunks)
-"""
-
 from __future__ import annotations
 
 import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse
-from starlette.responses import Response
 
-from app.audio.stream import chunk_bytes, ensure_mono_pcm16, resample_pcm16_mono
+from app.audio import chunk_bytes, ensure_mono_pcm16, resample_pcm16_mono
 from app.config import settings
-from app.db import close_db, connect_db, get_db
 from app.openai_ws import OpenAIRealtimeWS
 from app.recording import MicSessionRecorder
-from app.routes.devices import router as devices_router
-
-FRONTEND_INDEX = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
-
-active_devices: dict[str, WebSocket] = {}
-active_devices_lock = asyncio.Lock()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(
-        "[STARTUP] Limi Voice AI: "
+        "[STARTUP] Limi backend: "
         f"device_in={settings.device_input_rate}Hz, "
         f"device_out={settings.device_output_rate}Hz, "
-        f"chunk={settings.device_output_chunk_bytes}B, "
         f"openai={settings.openai_realtime_model}/{settings.openai_voice}"
     )
-    await connect_db()
     yield
-    await close_db()
-    print("[SHUTDOWN] Limi Voice AI stopped.")
+    print("[SHUTDOWN] Limi backend stopped")
 
 
-app = FastAPI(title="Limi Voice AI Backend", version="0.3.0", lifespan=lifespan)
-app.include_router(devices_router)
+app = FastAPI(title="Limi Voice Backend", version="0.1.0", lifespan=lifespan)
 
-
-@app.get("/", response_class=HTMLResponse)
-async def index() -> Response:
-    if FRONTEND_INDEX.is_file():
-        return FileResponse(str(FRONTEND_INDEX))
-    return HTMLResponse(
-        "<h1>Limi Voice AI</h1><p>Frontend not found.</p>",
-        status_code=404,
-    )
+active_devices: dict[str, WebSocket] = {}
+active_devices_lock = asyncio.Lock()
 
 
 @app.get("/health")
 async def health() -> dict:
-    mongo_status = "connected"
-    try:
-        await get_db().command("ping")
-    except Exception:  # noqa: BLE001
-        mongo_status = "disconnected"
-    async with active_devices_lock:
-        device_count = len(active_devices)
-    return {
-        "status": "ok" if mongo_status == "connected" else "degraded",
-        "active_devices": device_count,
-        "mongo": mongo_status,
-        "mongo_database": get_db().name,
-        "device_output_chunk_bytes": settings.device_output_chunk_bytes,
-    }
+    return {"status": "ok"}
 
 
 @app.websocket("/ws/{device_id}")
@@ -93,9 +51,7 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
         except Exception:  # noqa: BLE001
             pass
 
-    send_q: asyncio.Queue[bytes | str | None] = asyncio.Queue(
-        maxsize=settings.device_send_queue_chunks
-    )
+    send_q: asyncio.Queue[bytes | str | None] = asyncio.Queue(maxsize=settings.device_send_queue_chunks)
     send_lock = asyncio.Lock()
     audio_burst_remaining = settings.device_output_initial_burst_chunks
     speaker_response_active = False
@@ -155,7 +111,7 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
     async def queue_speaker_pcm(pcm_device: bytes) -> None:
         await ensure_speaker_started()
         if settings.device_output_channels != 1:
-            raise RuntimeError("Only mono device output is supported")
+            raise RuntimeError("Only mono device output is supported in this baseline")
         for chunk in chunk_bytes(pcm_device, settings.device_output_chunk_bytes):
             stats["speaker_frames"] += 1
             stats["speaker_bytes"] += len(chunk)
@@ -188,7 +144,7 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
             await queue_speaker_pcm(pcm_device)
 
     async def on_ai_event(event: dict) -> None:
-        nonlocal speaker_response_active, speaker_response_flushed
+        nonlocal audio_burst_remaining, speaker_response_active, speaker_response_flushed
         etype = event.get("type", "")
         if etype in ("response.output_audio.delta", "response.audio.delta"):
             return
@@ -232,12 +188,11 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
             message = await websocket.receive()
             if message.get("type") == "websocket.disconnect":
                 raise WebSocketDisconnect
-
-            data = message.get("bytes")
-            if data is not None:
+            if "bytes" in message and message["bytes"] is not None:
+                payload = message["bytes"]
                 stats["mic_frames"] += 1
-                stats["mic_bytes"] += len(data)
-                mono = ensure_mono_pcm16(data, settings.device_input_channels)
+                stats["mic_bytes"] += len(payload)
+                mono = ensure_mono_pcm16(payload, settings.device_input_channels)
                 ai_pcm = resample_pcm16_mono(
                     mono,
                     settings.device_input_rate,
@@ -246,10 +201,8 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
                 if settings.save_backend_mic:
                     recorder.write(mono, ai_pcm)
                 await bridge.send_audio(ai_pcm)
-                continue
-
-            text = message.get("text")
-            if text is not None:
+            elif "text" in message and message["text"] is not None:
+                text = message["text"]
                 try:
                     event = json.loads(text)
                 except json.JSONDecodeError:
@@ -300,9 +253,3 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
         except Exception:  # noqa: BLE001
             pass
         print(f"[DEVICE] {device_id}: closed")
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
