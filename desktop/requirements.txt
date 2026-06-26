@@ -1,0 +1,4 @@
+# Desktop client dependencies (install on a machine with mic + speakers).
+websockets>=14.1
+sounddevice>=0.5.5
+numpy>=2.0.0

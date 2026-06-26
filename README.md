@@ -17,7 +17,7 @@ Device mic ──(16kHz PCM)──▶ WebSocket /ws/{client_id}
                        streams speech-to-speech audio back
                                    │  resample 24k → 48k stereo
                                    ▼
-Device speaker ◀──(48kHz stereo PCM)── WebSocket
+Device speaker ◀──(24kHz mono PCM)── WebSocket
 ```
 
 ### Pipeline summary
@@ -26,8 +26,8 @@ Device speaker ◀──(48kHz stereo PCM)── WebSocket
    audio (resampled to 24kHz) into the input buffer.
 3. **OpenAI's server-side VAD** owns turn-taking — it detects when the user
    starts/stops speaking and when to respond. There is no local VAD tuning.
-4. The model streams audio back; the server resamples it to 48kHz stereo and
-   relays it to the device, framed with `response_start` / `response_end`.
+4. The model streams audio back; the server resamples it to the device output rate
+   (default 24 kHz mono) and relays it framed with `speaker_begin` / `speaker_end`.
 5. **Barge-in** is supported: if the user speaks while the model is talking, the
    in-progress reply is cancelled and a `response_interrupted` is sent.
 
@@ -45,7 +45,8 @@ Limi_Voice_AI/
 │       └── vad.py          # RMS helper for the terminal mic-activity meter
 ├── frontend/
 │   └── index.html         # Browser test console (mic capture + playback)
-├── test_client.py         # Local mic/speaker WebSocket test client
+├── desktop/               # Python desktop client (matches hardware protocol)
+├── test_client.py         # CLI WebSocket test client (legacy formats)
 ├── requirements.txt
 ├── .env.example           # Copy to .env and add your OpenAI key
 └── README.md
@@ -76,6 +77,7 @@ python -m app.main
 ```
 
 - Browser test console: <http://localhost:8000/>
+- **Desktop client** (recommended without hardware): `pip install -r desktop/requirements.txt && python -m desktop`
 - Health check: <http://localhost:8000/health>
 - WebSocket endpoint: `ws://localhost:8000/ws/{client_id}`
 
@@ -93,23 +95,22 @@ All settings live in `.env` (see `.env.example`) and are validated by
 | `REALTIME_VAD_TYPE` | `server_vad` | `server_vad` or `semantic_vad` |
 | `REALTIME_SILENCE_MS` | `500` | (server_vad) trailing silence to end a turn |
 | `REALTIME_INPUT_RATE` | `24000` | Sample rate sent to the Realtime API |
-| `INPUT_SAMPLE_RATE` | `16000` | Inbound audio sample rate (Hz) |
-| `INPUT_CHANNELS` | `1` | Inbound channel count |
-| `INPUT_SAMPLE_WIDTH` | `2` | Inbound bytes per sample (16-bit PCM) |
-| `OUTPUT_SAMPLE_RATE` | `48000` | Outbound sample rate (Hz) |
-| `OUTPUT_CHANNELS` | `2` | Outbound channel count |
-| `VAD_SILENCE_THRESHOLD` | `500.0` | Mic-meter display threshold only (not turn-taking) |
+| `DEVICE_INPUT_RATE` | `16000` | Inbound audio sample rate (Hz) |
+| `DEVICE_INPUT_CHANNELS` | `1` | Inbound channel count |
+| `DEVICE_OUTPUT_RATE` | `24000` | Outbound audio sample rate (Hz) |
+| `DEVICE_OUTPUT_CHANNELS` | `1` | Outbound channel count |
+| `DEVICE_OUTPUT_CHUNK_MS` | `80` | Outbound WebSocket frame duration |
 
 ## WebSocket protocol
 
-- **Client → Server:** binary frames of raw 16-bit PCM audio, streamed
-  continuously. (Legacy text control messages like `end_turn` are ignored —
-  turn-taking is automatic via the server-side VAD.)
+- **Client → Server:** binary frames of 16 kHz mono 16-bit PCM, plus JSON control
+  messages (`hello`, `wake_detected`, `wake_session_end`). Turn-taking is handled
+  by OpenAI server-side VAD on the backend.
 - **Server → Client:**
-  - `{"type": "response_start"}` before audio playback
-  - binary PCM frames (48kHz stereo 16-bit)
-  - `{"type": "response_end"}` when the reply completes
-  - `{"type": "response_interrupted"}` if the user barges in
+  - `{"type": "backend_ready", ...}` on connect
+  - `{"type": "speaker_begin"}` before audio playback
+  - binary PCM frames (24 kHz mono 16-bit by default)
+  - `{"type": "speaker_end"}` when the reply completes
   - `{"type": "error", "detail": "..."}` on failure
 
 ## Notes
