@@ -11,6 +11,11 @@ pydantic-settings==2.7.1
 # --- MongoDB (async) ---
 motor==3.7.1
 
+# --- LangGraph AI layer (text reasoning + tools; Realtime handles voice) ---
+langgraph>=0.2.60
+langchain-core>=0.3.28
+langchain-openai>=0.3.0
+
 # --- Audio processing ---
 # NumPy powers the in-process PCM resampling between the device (16k/48k) and
 # the OpenAI Realtime API (24k).

@@ -21,7 +21,7 @@ from starlette.responses import Response
 from app.audio.stream import chunk_bytes, ensure_mono_pcm16, resample_pcm16_mono
 from app.config import settings
 from app.db import close_db, connect_db, get_db
-from app.openai_ws import OpenAIRealtimeWS
+from app.agent.layer import VoiceAgentLayer
 from app.recording import MicSessionRecorder
 from app.routes.devices import router as devices_router
 
@@ -211,7 +211,7 @@ async def device_ws(websocket: WebSocket, device_id: str) -> None:
                 speaker_response_active = False
                 await send_device_text('{"type":"speaker_end"}')
 
-    bridge = OpenAIRealtimeWS(device_id, on_audio=on_ai_audio, on_event=on_ai_event)
+    bridge = VoiceAgentLayer(device_id, on_audio=on_ai_audio, on_event=on_ai_event)
 
     try:
         await bridge.connect()
